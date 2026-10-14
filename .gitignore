@@ -1,0 +1,10 @@
+# Local config: holds repo names and maybe a path to a secrets file. Copy from .env.example.
+.env
+# Secrets dotenv files passed via SECRETS_ENV_FILE, if kept inside the repo folder.
+*.secrets.env
+# Bare clone and per-PR JSON scratch files written during a run.
+work/
+# Timestamped run logs.
+logs/
+# bats-core test runner installed by `npm install`.
+node_modules/
