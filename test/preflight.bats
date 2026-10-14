@@ -40,3 +40,11 @@ source "$BATS_TEST_DIRNAME/helpers.bash"   # plain source: also works with C:/ p
   [ "$status" -eq 0 ]
   [ "$(calls '^pr list --repo src-owner/project --state all .*--json number,state,isCrossRepository,comments,reviews,labels,assignees,milestone ')" -eq 1 ]
 }
+
+@test "a failing merged-PR query stops the run before the destination is created" {
+  make_pr 1 feat/a
+  touch "$STUB_DIR/fail_merged_list"
+  run_clone
+  [ "$status" -ne 0 ]
+  [ "$(calls '^repo create')" -eq 0 ]
+}

@@ -14,6 +14,7 @@ replay_prs() {
   log "== replay_prs"
   local n merge head ref base_ref base got copied
   copied=" $(gh pr list --repo "$DEST_REPO" --state all --limit 1000 --json number --jq '[.[].number] | join(" ")') "
+  merged_prs_tsv
   while IFS=$'\t' read -r n merge head ref base_ref; do
     [[ "$copied" == *" $n "* ]] && { log "PR #$n already in $DEST_REPO, skipping"; continue; }
     base="$(srcgit rev-parse "$merge^1")"
@@ -28,5 +29,5 @@ replay_prs() {
     push_ref "$merge" "$base_ref"
     wait_merged "$n"
     run_logged "${GIT[@]}" -C "$WORK_DIR/src.git" push "$DEST_GIT_URL" --delete "$ref"
-  done < <(merged_prs_tsv)
+  done < "$MERGED_PRS"
 }
