@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # test/preflight.bats: the tool must refuse sources it can't copy exactly, before creating anything.
 
-load helpers
+source "$BATS_TEST_DIRNAME/helpers.bash"   # plain source: also works with C:/ paths when run via npm on Windows
 
 @test "preflight passes on a source with only merged PRs" {
   make_pr 1 feat/a
