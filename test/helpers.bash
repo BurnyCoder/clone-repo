@@ -10,9 +10,10 @@
 ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"   # repo root: where clone-repo.sh lives
 
 # setup: runs before every test (bats hook). Builds the sandbox and exports clone-repo's config.
+# dest_prs / created.tsv start empty: the stub's list of destination PRs and its record of created ones.
 setup() {
   T="$BATS_TEST_TMPDIR"
-  export STUB_DIR="$T/stub"; mkdir -p "$STUB_DIR"
+  export STUB_DIR="$T/stub"; mkdir -p "$STUB_DIR"; touch "$STUB_DIR/dest_prs" "$STUB_DIR/created.tsv"
   export PATH="$ROOT/test/stub:$PATH"                     # fake gh first on PATH
   export SOURCE_REPO=src-owner/project DEST_REPO=dst-owner/project
   export SOURCE_GIT_URL="$T/source" DEST_GIT_URL="$T/dest.git"
@@ -26,7 +27,7 @@ setup() {
 }
 
 # src ARGS...: run git inside the source repo with a fixed test identity.
-src() { git -C "$SOURCE_GIT_URL" -c user.name=Test -c user.email=test@example.com "$@"; }
+src() { git -C "$SOURCE_GIT_URL" -c user.name=Test -c user.email=test@example.com -c core.autocrlf=false "$@"; }
 
 # make_pr N BRANCH [squash]: add a PR branch with one commit and merge it into main the way GitHub does.
 # Records "N, merge SHA, head SHA, head ref, base ref" in prs.tsv, which the gh stub serves as the
