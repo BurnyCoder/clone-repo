@@ -9,11 +9,12 @@
 check_merges() {
   log "== check_merges: were all PRs merged with a merge commit?"
   local n merge head bad=""
+  merged_prs_tsv
   while IFS=$'\t' read -r n merge head _ _; do
     # <sha>^2 is a commit's second parent (https://git-scm.com/docs/gitrevisions). It doesn't exist for
     # single-parent squash/rebase commits, or when the merge commit isn't in any branch.
     [ "$(srcgit rev-parse -q --verify "$merge^2" || true)" = "$head" ] || bad+=" #$n"
-  done < <(merged_prs_tsv)
+  done < "$MERGED_PRS"
   [ -z "$bad" ] || die "not supported yet:$bad merged by squash or rebase (no merge commit to replay). See docs/roadmap.md"
   log "check_merges: OK"
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # test/replay.bats: a full run against real local git repos (source/ -> dest.git) with the fake gh.
 
-load helpers
+source "$BATS_TEST_DIRNAME/helpers.bash"   # plain source: also works with C:/ paths when run via npm on Windows
 
 # make_source: two merged PRs, plus a branch that still exists and a tag, so mirroring is checked too.
 make_source() {

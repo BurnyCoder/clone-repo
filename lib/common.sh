@@ -28,13 +28,16 @@ srcgit() { git -C "$WORK_DIR/src.git" "$@"; }
 # Refspec syntax <src>:<dst>: https://git-scm.com/docs/git-push#Documentation/git-push.txt-refspec
 push_ref() { run_logged "${GIT[@]}" -C "$WORK_DIR/src.git" push --force "$DEST_GIT_URL" "$1:refs/heads/$2"; }
 
-# merged_prs_tsv: the source's merged PRs, lowest number first, one per line as tab-separated
-# "number merge-SHA head-SHA head-branch base-branch". gh's --jq is a built-in jq (https://cli.github.com/manual/gh_help_formatting).
-# Fields: https://cli.github.com/manual/gh_pr_list
+# merged_prs_tsv: write the source's merged PRs to $MERGED_PRS, lowest number first, one per line as
+# tab-separated "number merge-SHA head-SHA head-branch base-branch". gh's --jq is a built-in jq
+# (https://cli.github.com/manual/gh_help_formatting). Fields: https://cli.github.com/manual/gh_pr_list
+# Callers read the file instead of a `< <(...)` process substitution, because bash ignores that
+# command's exit status. A failed query has to stop the run, not look like "no PRs".
 merged_prs_tsv() {
+  MERGED_PRS="$WORK_DIR/merged_prs.tsv"
   gh pr list --repo "$SOURCE_REPO" --state merged --limit 1000 \
     --json number,mergeCommit,headRefOid,headRefName,baseRefName \
-    --jq 'sort_by(.number)[] | [.number, .mergeCommit.oid, .headRefOid, .headRefName, .baseRefName] | @tsv'
+    --jq 'sort_by(.number)[] | [.number, .mergeCommit.oid, .headRefOid, .headRefName, .baseRefName] | @tsv' > "$MERGED_PRS"
 }
 
 # wait_merged N: poll the destination until PR N shows MERGED. GitHub marks it merged by itself, shortly

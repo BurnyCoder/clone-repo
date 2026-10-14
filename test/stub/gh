@@ -27,7 +27,8 @@ case "$args" in
   # preflight: problems string computed by gh's jq in the real tool (tests write pr_problems).
   "pr list --repo $SOURCE_REPO --state all"*"isCrossRepository"*) cat "$S/pr_problems" 2>/dev/null || true ;;
   # merged_prs_tsv: number, merge commit, head SHA, head ref, base ref (written by make_pr in helpers).
-  "pr list --repo $SOURCE_REPO --state merged"*) cat "$S/prs.tsv" 2>/dev/null || true ;;
+  # (tests touch fail_merged_list to simulate a network/API error on this call)
+  "pr list --repo $SOURCE_REPO --state merged"*) [ ! -f "$S/fail_merged_list" ] || exit 1; cat "$S/prs.tsv" 2>/dev/null || true ;;
   # replay_prs: numbers already present in the destination.
   "pr list --repo $DEST_REPO --state all"*"--json number --jq"*) tr '\n' ' ' < "$S/dest_prs" ;;
   # verify: PR list of either repo; identical canned output, the real comparison is covered by the real run.

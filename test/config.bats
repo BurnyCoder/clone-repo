@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # test/config.bats: configuration loading and validation (lib/config.sh, clone-repo.sh argument handling).
 
-load helpers
+source "$BATS_TEST_DIRNAME/helpers.bash"   # plain source: also works with C:/ paths when run via npm on Windows
 
 @test "fails clearly when SOURCE_REPO is missing" {
   unset SOURCE_REPO
