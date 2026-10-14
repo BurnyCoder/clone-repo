@@ -1,0 +1,11 @@
+{
+  "name": "clone-repo",
+  "private": true,
+  "description": "Test tooling only: installs the bats-core test runner. clone-repo itself is plain bash + git + gh.",
+  "scripts": {
+    "test": "bats test"
+  },
+  "devDependencies": {
+    "bats": "1.13.0"
+  }
+}

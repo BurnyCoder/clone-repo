@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# test/stub/gh: a fake `gh` CLI that the bats tests put first on PATH.
+# Global context: clone-repo talks to GitHub only through `gh`. This stub answers exactly the call shapes
+# clone-repo makes, using files in $STUB_DIR, and logs every call to $STUB_DIR/calls.log so tests can
+# assert on them. Git itself is never faked: pushes go to a real local bare repo ($DEST_GIT_URL).
+# Two GitHub behaviours are emulated with real git, so the replay order is actually tested:
+#   - creating a PR fails when the base branch already contains the head ("No commits between ..."),
+#   - a PR counts as MERGED once its head commit is reachable from the base branch, the rule GitHub applies
+#     to pushes (https://man.archlinux.org/man/hub-merge.1.en).
+# Any call shape not handled below fails loudly, so new gh usage can't slip past the tests.
+set -euo pipefail
+
+S="${STUB_DIR:?STUB_DIR must be set by the test}"   # per-test state directory
+args="$*"                                          # whole command line, matched with case patterns below
+printf '%s\n' "$args" >> "$S/calls.log"            # record every call for assertions
+
+# field NAME FILE: value of a "NAME":"value" pair in the one-line JSON files this stub writes itself.
+field() { sed -E "s/.*\"$1\":\"([^\"]*)\".*/\1/" "$2"; }
+# input_file: the path that follows --input on the command line (gh api --input FILE).
+input_file() { local prev=""; for a in "$@"; do [ "$prev" = --input ] && { echo "$a"; return; }; prev="$a"; done; }
+# merged SHA BASE: true when commit SHA is reachable from branch BASE in the destination bare repo.
+merged() { git -C "$DEST_GIT_URL" merge-base --is-ancestor "$1" "refs/heads/$2" 2>/dev/null; }
+
+case "$args" in
+  # preflight: number of issues in the source (tests write issue_count to simulate some).
+  "issue list --repo $SOURCE_REPO "*) cat "$S/issue_count" 2>/dev/null || echo 0 ;;
+  # preflight: problems string computed by gh's jq in the real tool (tests write pr_problems).
+  "pr list --repo $SOURCE_REPO --state all"*"isCrossRepository"*) cat "$S/pr_problems" 2>/dev/null || true ;;
+  # merged_prs_tsv: number, merge commit, head SHA, head ref, base ref (written by make_pr in helpers).
+  "pr list --repo $SOURCE_REPO --state merged"*) cat "$S/prs.tsv" 2>/dev/null || true ;;
+  # replay_prs: numbers already present in the destination.
+  "pr list --repo $DEST_REPO --state all"*"--json number --jq"*) tr '\n' ' ' < "$S/dest_prs" ;;
+  # verify: PR list of either repo; identical canned output, the real comparison is covered by the real run.
+  "pr list --repo "*"--json number,title"*) echo '[]' ;;
+  # replay_prs: the source PR's title/body/head/base as JSON.
+  "api repos/$SOURCE_REPO/pulls/"*)
+    n="${args#api repos/$SOURCE_REPO/pulls/}"; n="${n%% *}"
+    IFS=$'\t' read -r _ _ _ ref base < <(awk -F'\t' -v n="$n" '$1 == n' "$S/prs.tsv")
+    printf '{"title":"PR %s","body":"Body of PR %s","head":"%s","base":"%s"}\n' "$n" "$n" "$ref" "$base" ;;
+  # replay_prs: create a PR in the destination; refuse like GitHub when there is nothing to merge.
+  "api repos/$DEST_REPO/pulls "*"--input"*)
+    f="$(input_file "$@")"; head="$(field head "$f")"; base="$(field base "$f")"
+    sha="$(git -C "$DEST_GIT_URL" rev-parse "refs/heads/$head")"
+    if merged "$sha" "$base"; then echo "No commits between $base and $head" >&2; exit 1; fi
+    n=$(( $(wc -l < "$S/dest_prs") + 1 ))
+    printf '%s\t%s\t%s\t%s\n' "$n" "$head" "$base" "$sha" >> "$S/created.tsv"
+    echo "$n" >> "$S/dest_prs"; echo "$n" ;;
+  # wait_merged: MERGED once the PR head is reachable from its base, else OPEN.
+  "pr view "*"--repo $DEST_REPO --json state"*)
+    n="${args#pr view }"; n="${n%% *}"
+    IFS=$'\t' read -r _ _ base sha < <(awk -F'\t' -v n="$n" '$1 == n' "$S/created.tsv")
+    if merged "$sha" "$base"; then echo MERGED; else echo OPEN; fi ;;
+  # create_target: does the destination exist yet?
+  "repo view $DEST_REPO --json name"*) [ -f "$S/dest_exists" ] ;;
+  "repo create $DEST_REPO "*) touch "$S/dest_exists"; echo "https://github.com/$DEST_REPO" ;;
+  "repo view $SOURCE_REPO --json description --jq"*) echo "A test project" ;;
+  "repo view $SOURCE_REPO --json hasIssuesEnabled"*)
+    echo "--enable-issues=true --enable-projects=true --enable-wiki=false --enable-merge-commit=true --enable-squash-merge=true --enable-rebase-merge=true --delete-branch-on-merge=false" ;;
+  "repo view $SOURCE_REPO --json defaultBranchRef"*) echo main ;;
+  # verify: settings, labels and secret names of either repo; identical canned output.
+  "repo view "*"--json description,"*) echo '{"settings":"same"}' ;;
+  "label list --repo "*) echo '[{"name":"bug"}]' ;;
+  "secret list --repo $SOURCE_REPO "*) cat "$S/source_secrets" 2>/dev/null || true ;;
+  "secret list --repo $DEST_REPO "*) cat "$S/dest_secrets" 2>/dev/null || true ;;
+  # Writes whose effect isn't observable locally: recorded in calls.log only.
+  "repo edit $DEST_REPO "*|"label clone $SOURCE_REPO --repo $DEST_REPO "*|"secret set "*) ;;
+  # git credential helper: never needed for local paths.
+  "auth git-credential"*) exit 1 ;;
+  *) echo "gh stub: unhandled call: $args" >&2; exit 1 ;;
+esac
