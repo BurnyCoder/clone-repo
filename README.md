@@ -101,20 +101,23 @@ Every line is logged with a timestamp, including git and gh output. If a check f
 ## Architecture
 
 ```mermaid
-flowchart LR
-  env[".env / environment"] --> config["lib/config.sh<br/>load_config"]
-  config --> main["clone-repo.sh<br/>main: runs phases"]
-  main --> preflight --> clone_source --> check_merges --> create_target --> replay_prs --> sync_refs --> copy_secrets --> verify
-  common["lib/common.sh<br/>log, run_logged, GIT,<br/>push_ref, merged_prs_tsv, wait_merged"] -.-> replay_prs
-  src[("Source repo<br/>(read only)")] -- "gh pr/issue list" --> preflight
-  src -- "git clone --bare" --> bare[("work/src.git")]
-  bare --> check_merges
-  bare -- "git push" --> dst[("Destination repo")]
-  create_target -- "gh repo create/edit,<br/>gh label clone" --> dst
-  replay_prs -- "gh api: create PR,<br/>poll state" --> dst
+flowchart TB
+  env[".env / environment"] --> main["clone-repo.sh<br/>load_config, then the phases in order"]
+  main --> preflight
+  subgraph phases["lib/*.sh, one function per phase, in run order"]
+    direction TB
+    preflight --> clone_source --> check_merges --> create_target --> replay_prs --> sync_refs --> copy_secrets --> verify
+  end
+  common["lib/common.sh<br/>log, run_logged, GIT, push_ref,<br/>merged_prs_tsv, wait_merged"] -.- phases
+  src[("Source repo<br/>read only")] -. "gh pr / issue list" .-> preflight
+  src -. "git clone --bare" .-> bare[("work/src.git")]
+  bare -.-> check_merges
+  create_target -- "gh repo create / edit,<br/>gh label clone" --> dst[("Destination repo")]
+  replay_prs -- "git push + gh api:<br/>open PR, poll MERGED" --> dst
+  sync_refs -- "git push --mirror" --> dst
   copy_secrets -- "gh secret set --env-file" --> dst
-  verify -- "git ls-remote + gh" --> src
-  verify -- "git ls-remote + gh" --> dst
+  verify -. "git ls-remote + gh: compare" .-> src
+  verify -. "git ls-remote + gh: compare" .-> dst
   main --> logs[("logs/clone-repo_*.log")]
 ```
 
