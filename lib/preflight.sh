@@ -1,7 +1,8 @@
 # lib/preflight.sh: phase 1. Refuse sources this tool can't copy exactly, before anything is created.
 # Global context: issues and PRs share one number sequence, and the destination hands out numbers in
 # creation order, so the copy only matches when the source holds nothing but merged PRs numbered 1..N.
-# A replayed PR carries only its title, body and commits, so PRs with conversation or metadata are refused.
+# A replayed PR carries its title, body, commits and conversation comments, so PRs with reviews or
+# metadata (labels, assignees, milestone) are refused.
 # Supporting more is planned in docs/roadmap.md. The squash/rebase check needs the commits, so it is a
 # separate phase (check_merges) after clone_source.
 
@@ -13,8 +14,8 @@ PR_PROBLEMS_JQ='
     + (if $c > 10 then " ... (\($c) in total)" else "" end);
   [ (map(select(.state != "MERGED")) | select(length > 0) | "PRs not merged: \(nums)"),
     (map(select(.isCrossRepository)) | select(length > 0) | "PRs from forks: \(nums)"),
-    (map(select(([.comments, .reviews, .labels, .assignees] | map(length) | add) > 0 or .milestone != null))
-      | select(length > 0) | "PRs with comments, reviews, labels, assignees or a milestone (not copied yet): \(nums)"),
+    (map(select(([.reviews, .labels, .assignees] | map(length) | add) > 0 or .milestone != null))
+      | select(length > 0) | "PRs with reviews, labels, assignees or a milestone (not copied yet): \(nums)"),
     ((map(.number) | sort) as $n | select($n != [range(1; ($n | length) + 1)])
       | "PR numbers are not 1..N (the gaps belong to deleted issues or discussions)")
   ] | join("; ")'
@@ -26,7 +27,7 @@ preflight() {
   # A repo with issues turned off makes `gh issue list` fail; then it has no issues to count.
   issues="$(gh issue list --repo "$SOURCE_REPO" --state all --limit 1 --json number --jq length 2>/dev/null || echo 0)"
   problems="$(gh pr list --repo "$SOURCE_REPO" --state all --limit 1000 \
-    --json number,state,isCrossRepository,comments,reviews,labels,assignees,milestone --jq "$PR_PROBLEMS_JQ")"
+    --json number,state,isCrossRepository,reviews,labels,assignees,milestone --jq "$PR_PROBLEMS_JQ")"
   [ "$issues" = 0 ] || problems="source has issues (they share numbers with PRs and aren't copied yet)${problems:+; $problems}"
   [ -z "$problems" ] || die "not supported yet: $problems. See docs/roadmap.md"
   log "preflight: OK"
