@@ -27,6 +27,20 @@ make_source() {
   [ "$(calls '^label clone src-owner/project --repo dst-owner/project --force')" -eq 1 ]
 }
 
+@test "PR comments are copied, in order, to the replayed PR" {
+  make_pr 1 feat/a
+  make_pr 2 feat/b
+  printf '%s\n' '{"body":"> Originally posted by @alice on 2026-01-01T00:00:00Z\n\nfirst"}' \
+    '{"body":"> Originally posted by @bob on 2026-01-02T00:00:00Z\n\nsecond"}' > "$STUB_DIR/comments_1.jsonl"
+  run_clone
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PR #1: copied 2 comments"* ]]
+  [ "$(calls '^api repos/dst-owner/project/issues/1/comments --input -')" -eq 2 ]
+  [ "$(calls '^api repos/dst-owner/project/issues/2/comments')" -eq 0 ]   # PR 2 had none, so nothing is posted
+  [ "$(grep -c . "$STUB_DIR/posted_comments.log")" -eq 2 ]
+  [ "$(grep -n -o -E 'first|second' "$STUB_DIR/posted_comments.log" | tr '\n' ' ')" = "1:first 2:second " ]
+}
+
 @test "a second run syncs: copied PRs are skipped, new ones replayed" {
   make_pr 1 feat/a
   run_clone

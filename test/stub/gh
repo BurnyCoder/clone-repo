@@ -31,8 +31,14 @@ case "$args" in
   "pr list --repo $SOURCE_REPO --state merged"*) [ ! -f "$S/fail_merged_list" ] || exit 1; cat "$S/prs.tsv" 2>/dev/null || true ;;
   # replay_prs: numbers already present in the destination.
   "pr list --repo $DEST_REPO --state all"*"--json number --jq"*) tr '\n' ' ' < "$S/dest_prs" ;;
-  # verify: PR list of either repo; identical canned output, the real comparison is covered by the real run.
-  "pr list --repo "*"--json number,title"*) echo '[]' ;;
+  # verify: PR list and comment counts of either repo; identical canned output, the real comparison is covered by the real run.
+  "pr list --repo "*"--json number,title"*|"pr list --repo "*"--json number,comments"*) echo '[]' ;;
+  # copy_comments: the source PR's comments as one JSON object per line (tests write comments_N.jsonl;
+  # the "Originally posted by" prefix is built by gh's jq in the real tool, so the file holds the final bodies).
+  "api repos/$SOURCE_REPO/issues/"*"/comments "*)
+    n="${args#api repos/$SOURCE_REPO/issues/}"; n="${n%%/*}"; cat "$S/comments_$n.jsonl" 2>/dev/null || true ;;
+  # copy_comments: post one comment to the destination PR; the JSON body arrives on stdin (--input -).
+  "api repos/$DEST_REPO/issues/"*"/comments --input -"*) cat >> "$S/posted_comments.log"; echo >> "$S/posted_comments.log"; echo '{}' ;;
   # replay_prs: the source PR's title/body/head/base as JSON.
   "api repos/$SOURCE_REPO/pulls/"*)
     n="${args#api repos/$SOURCE_REPO/pulls/}"; n="${n%% *}"
