@@ -28,7 +28,7 @@ Notes for contributors and AI coding agents. Read [README.md](README.md) for wha
 
 ## Testing
 
-- `npm install` once, then `npm test` (or `./node_modules/.bin/bats test`). The 18 tests take about 2.5 minutes on Windows, mostly git process start-up.
+- `npm install` once, then `npm test` (or `./node_modules/.bin/bats test`). The 19 tests take about 2.5 minutes on Windows, mostly git process start-up.
 - `test/helpers.bash` (`setup`) creates, per test:
   - a real source repo, where `make_pr N branch [squash]` merges like GitHub,
   - an empty bare destination,

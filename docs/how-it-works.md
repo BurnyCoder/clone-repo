@@ -28,6 +28,7 @@ What `replay_prs` does in the empty destination:
 | base → `merge^1` | `main = A` | `main = M1` (already) | the base as it was just before the merge |
 | branch → head | `feat/a = H1` | `feat/b = H2` | the PR's commits |
 | open PR | `POST /pulls` → **#1** | → **#2** | needs commits between base and head, which exist now |
+| comments | posted in order, if any | | the conversation, each with an "Originally posted by" line |
 | base → merge | `main = M1` (fast-forward) | `main = M2` | the head is now in `main` |
 | wait | state `MERGED` | `MERGED` | GitHub's detection is asynchronous, so `wait_merged` polls |
 | delete branch | `feat/a` | `feat/b` | like "Delete branch" after a merge |
@@ -43,7 +44,7 @@ The base branch is pushed with `--force` on purpose. If PRs were merged out of n
 | no issues, no numbering gaps | `preflight` | PR numbers would shift. Gaps come from deleted issues and from discussions, which share the counter. |
 | only merged PRs | `preflight` | An open PR's branch is deleted after the replay, which would close it. A closed PR has no merge commit to replay. |
 | no fork PRs | `preflight` | The head branch lives in another repo, and its name can clash with a destination branch. |
-| no comments/reviews/labels/assignees/milestone | `preflight` | The replay sends only the title and body, so these would be lost without notice. |
+| no reviews/labels/assignees/milestone | `preflight` | The replay sends the title, body and conversation comments only, so these would be lost without notice. |
 | merge commit's second parent = head | `check_merges` | Squash and rebase merges make new commits that don't contain the head, so GitHub would never mark the PR merged. |
 | returned number = N | `replay_prs` | Catches anything created in the destination by someone else during the run. |
 
@@ -51,10 +52,10 @@ The base branch is pushed with `--force` on purpose. If PRs were merged out of n
 
 - `clone_source`: `git clone --bare $SOURCE_GIT_URL work/src.git`. Bare clones skip GitHub's hidden `refs/pull/*`, which GitHub refuses on push. Each PR head is a merge's second parent, so it is in the clone.
 - `create_target`: `gh repo create DEST --<visibility> --description ...`, then `gh repo edit DEST` with flags built from the source settings, then `gh label clone SOURCE --repo DEST --force`.
-- `replay_prs`: `git push --force DEST <sha>:refs/heads/<branch>` (through `push_ref`). The PR comes from `gh api repos/SOURCE/pulls/N --jq '{title, body, head: .head.ref, base: .base.ref}'` and is created with `gh api repos/DEST/pulls --input pr_N.json`. Going through a JSON file keeps the body byte for byte.
+- `replay_prs`: `git push --force DEST <sha>:refs/heads/<branch>` (through `push_ref`). The PR comes from `gh api repos/SOURCE/pulls/N --jq '{title, body, head: .head.ref, base: .base.ref}'` and is created with `gh api repos/DEST/pulls --input pr_N.json`. Going through a JSON file keeps the body byte for byte. Comments come from `gh api repos/SOURCE/issues/N/comments --paginate --jq <COMMENTS_JQ>`, which prints one `{"body": ...}` per line, and each is posted with `gh api repos/DEST/issues/N/comments --input -`. They are posted before the merge commit is pushed, so a run that stops later never leaves a merged PR without its comments.
 - `sync_refs`: `git push --mirror DEST`, then `gh repo edit DEST --default-branch <source default>`. Before that, the default branch is whichever branch was pushed first.
 - `copy_secrets`: `gh secret set --env-file FILE --repo DEST`.
-- `verify`: for each repo, `git ls-remote` (branches, tags, `refs/pull/N/head`), `gh pr list --json number,title,body,state,headRefName,headRefOid,baseRefName,mergeCommit,isDraft`, `gh label list`, `gh repo view --json <settings>` and `gh secret list`. The two snapshots are diffed. GitHub creates `refs/pull/N/head` for every PR, so a match there also shows the head SHAs line up.
+- `verify`: for each repo, `git ls-remote` (branches, tags, `refs/pull/N/head`), `gh pr list --json number,title,body,state,headRefName,headRefOid,baseRefName,mergeCommit,isDraft`, the comment count of each PR (`--json number,comments`), `gh label list`, `gh repo view --json <settings>` and `gh secret list`. The two snapshots are diffed. GitHub creates `refs/pull/N/head` for every PR, so a match there also shows the head SHAs line up.
 
 All git commands run as `git -c credential.helper= -c 'credential.helper=!gh auth git-credential'`. The empty value resets any configured helpers ([gitcredentials](https://git-scm.com/docs/gitcredentials#_custom_helpers)), so gh's token is used. That token carries the `workflow` scope, which GitHub requires for pushing commits that change `.github/workflows`. Your git config is not modified.
 
