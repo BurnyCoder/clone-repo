@@ -27,11 +27,12 @@ GitHub's own migration tool, the [GitHub Enterprise Importer](https://docs.githu
 
 - Commits, branches and tags copied byte for byte (same SHAs), with the default branch set to match the source.
 - Merged PRs recreated with the same number, title, body, head and base branch, head SHA and merge commit, and shown as merged.
+- PR conversation comments copied in order, each starting with a line naming the original author and time.
 - **Sync:** re-running skips PRs that are already copied and replays only new ones.
 - Settings copied: description, issues/projects/wiki toggles, allowed merge methods, delete-branch-on-merge. Labels are copied with `gh label clone`.
 - Actions secrets set from a local dotenv file through gh's own import (`gh secret set --env-file`), so values never pass through clone-repo or its logs.
-- Preflight refusals: issues, unmerged PRs, fork PRs, numbering gaps, squash/rebase merges, and PRs with comments, reviews, labels, assignees or a milestone. It refuses rather than make a silently incomplete copy.
-- `verify` compares refs (branches, tags, `refs/pull/N/head`), PRs, labels and settings, and warns about missing secret names.
+- Preflight refusals: issues, unmerged PRs, fork PRs, numbering gaps, squash/rebase merges, and PRs with reviews, labels, assignees or a milestone. It refuses rather than make a silently incomplete copy.
+- `verify` compares refs (branches, tags, `refs/pull/N/head`), PRs, the number of comments on each PR, labels and settings, and warns about missing secret names.
 - Timestamped logging to the terminal and to `logs/clone-repo_<timestamp>.log`.
 - Any single phase can be run on its own, for example `./clone-repo.sh verify`.
 
@@ -91,7 +92,7 @@ To copy secrets, write a file such as `ci.secrets.env` with `NAME=value` lines, 
 | 2 | `clone_source` | `git clone --bare` into `work/src.git`. Each run starts fresh. | no |
 | 3 | `check_merges` | Checks that each merged PR's merge commit has the PR head as its second parent, which rules out squash and rebase merges. | no |
 | 4 | `create_target` | Creates the destination with `DEST_VISIBILITY`, or reuses it on a sync. Copies the description, settings and labels. | yes |
-| 5 | `replay_prs` | For each merged PR not yet copied: pushes the base branch and the PR branch, opens the PR, checks its number, pushes the merge commit, waits for MERGED, then deletes the branch. | yes |
+| 5 | `replay_prs` | For each merged PR not yet copied: pushes the base branch and the PR branch, opens the PR, checks its number, copies its comments, pushes the merge commit, waits for MERGED, then deletes the branch. | yes |
 | 6 | `sync_refs` | `git push --mirror`, so all branches and tags equal the source's, then sets the default branch. | yes |
 | 7 | `copy_secrets` | `gh secret set --env-file` when `SECRETS_ENV_FILE` is set. | yes |
 | 8 | `verify` | Snapshots both repos into `work/source_*.txt` and `work/dest_*.txt`, diffs them, and logs PASS/FAIL/WARN. Ends with `ALL CHECKS PASSED`. | no |
@@ -128,13 +129,14 @@ Each phase is one function in its own file, `lib/<phase>.sh`. Only `clone-repo.s
 **Copied exactly:**
 - commits and their SHAs, branches, tags, and the default branch,
 - merged PRs: number, title, body, head and base branch, head SHA, merge commit and MERGED state,
+- PR conversation comments: the text, in order (author and time go in a first line, see below),
 - labels,
 - the settings listed under [Features](#features),
 - Actions secrets you supply.
 
 **Different in the copy** (the API can't set these):
 - PR creation and merge dates are the day of the copy.
-- The merge is credited to the account that ran the copy.
+- The merge is credited to the account that ran the copy. So are copied comments, each of which starts with a line such as `> Originally posted by @alice on 2026-01-01T00:00:00Z`.
 - The merge commit messages still name the source owner ("Merge pull request #N from source-owner/branch"), because they are part of the unchanged commits.
 
 **Refused by preflight, so the run stops before creating anything:**
@@ -143,7 +145,7 @@ Each phase is one function in its own file, `lib/<phase>.sh`. Only `clone-repo.s
 - PRs from forks,
 - numbering gaps (deleted issues, discussions),
 - squash or rebase merges,
-- PRs with comments, reviews, labels, assignees or a milestone.
+- PRs with reviews (including inline review comments), labels, assignees or a milestone.
 
 Only the newest 1000 PRs are listed per query, so a larger source is refused for numbering. How these could be supported is in [docs/roadmap.md](docs/roadmap.md).
 
@@ -164,7 +166,7 @@ npm install        # installs bats-core into node_modules/
 npm test           # or: ./node_modules/.bin/bats test
 ```
 
-The 18 tests take about 2.5 minutes on Windows, where starting processes is slow, and never touch GitHub:
+The 19 tests take about 2.5 minutes on Windows, where starting processes is slow, and never touch GitHub:
 - **Real local git:** a source repo is built with `git merge --no-ff`, the same as GitHub's merge button, and the destination is an empty local bare repo.
 - **Fake `gh`:** `test/stub/gh` recreates the two GitHub behaviours the replay relies on: PR creation fails when there are no commits between base and head, and a PR becomes MERGED once its head is reachable from the base.
 

@@ -10,8 +10,10 @@ clone-repo only copies what it can reproduce exactly, and `preflight` / `check_m
 | Open PRs | Same, but leave the PR open and keep its branch, so skip the branch delete and exclude it from the mirror prune. | Dates. |
 | Squash / rebase-merged PRs | Open the PR from `refs/pull/N/head` against the pre-merge base, push the real squash commit, then close the PR with a note naming the merge SHA. | The state is CLOSED instead of MERGED. GitHub only marks merged when the head is in the base. |
 | Fork PRs | Push the head to a namespaced branch such as `pr/N/<branch>`. | The head branch name. |
-| Comments, reviews, labels, assignees, milestones | Comments as issue comments with an "originally by" line. Labels via `POST /issues/N/labels`. Milestones created first, then assigned. Assignees only if they have access. Inline review comments as plain comments. | Authors and dates of comments. Inline review threads become plain comments. |
+| Reviews, labels, assignees, milestones | Labels via `POST /issues/N/labels`. Milestones created first, then assigned. Assignees only if they have access. Review bodies and inline review comments as plain comments with an "originally by" line. | Inline review threads become plain comments. |
 | More than 1000 PRs | Paginate past gh's `--limit 1000`. | None. |
+
+Done already: conversation comments on merged PRs are copied (see [how it works](how-it-works.md#commands-per-phase)).
 
 ## Other gaps
 

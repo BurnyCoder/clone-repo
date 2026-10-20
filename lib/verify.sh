@@ -1,7 +1,7 @@
 # lib/verify.sh: phase 8. Compare source and destination and report PASS / FAIL / WARN for each part.
 # Global context: this is the proof that the copy is exact. Refs are compared by SHA (branches, tags and
-# GitHub's refs/pull/N/head), PRs by number, title, body, state, branches, head SHA and merge commit, plus
-# labels and settings. Secrets can only be compared by name. Missing ones are a WARN, since their values
+# GitHub's refs/pull/N/head), PRs by number, title, body, state, branches, head SHA and merge commit, the
+# number of comments on each PR, plus labels and settings. Secrets can only be compared by name. Missing ones are a WARN, since their values
 # have to come from the user (SECRETS_ENV_FILE).
 
 # snapshot REPO GIT_URL NAME: write one repo's refs, PRs, labels, settings and secret names to $WORK_DIR/NAME_*.txt.
@@ -11,6 +11,9 @@ snapshot() {
   "${GIT[@]}" ls-remote "$url" | grep -E 'refs/(heads|tags|pull/[0-9]+/head)' | sort > "${p}_refs.txt" || true
   gh pr list --repo "$repo" --state all --limit 1000 \
     --json number,title,body,state,headRefName,headRefOid,baseRefName,mergeCommit,isDraft --jq 'sort_by(.number)' > "${p}_prs.txt"
+  # Comment counts per PR; dates and authors differ in the copy by design, bodies are checked by the replay.
+  gh pr list --repo "$repo" --state all --limit 1000 --json number,comments \
+    --jq 'sort_by(.number)[] | "\(.number) \(.comments | length)"' > "${p}_comments.txt"
   gh label list --repo "$repo" --limit 1000 --json name,color,description --jq 'sort_by(.name)' > "${p}_labels.txt"
   gh repo view "$repo" --json description,defaultBranchRef,hasIssuesEnabled,hasWikiEnabled,hasProjectsEnabled,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed,deleteBranchOnMerge \
     > "${p}_settings.txt"
@@ -23,7 +26,7 @@ verify() {
   local what failed=0 missing
   snapshot "$SOURCE_REPO" "$SOURCE_GIT_URL" source
   snapshot "$DEST_REPO" "$DEST_GIT_URL" dest
-  for what in refs prs labels settings; do
+  for what in refs prs comments labels settings; do
     if diff "$WORK_DIR/source_$what.txt" "$WORK_DIR/dest_$what.txt" > "$WORK_DIR/diff_$what.txt"; then log "PASS $what"
     else log "FAIL $what (< source, > destination):"; run_logged cat "$WORK_DIR/diff_$what.txt"; failed=1; fi
   done

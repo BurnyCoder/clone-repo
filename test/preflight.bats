@@ -35,10 +35,10 @@ source "$BATS_TEST_DIRNAME/helpers.bash"   # plain source: also works with C:/ p
   [ "$(calls '^repo create')" -eq 0 ]
 }
 
-@test "preflight also asks for PR comments, reviews, labels, assignees and milestones (not copied yet)" {
+@test "preflight asks for PR reviews, labels, assignees and milestones (not copied yet), but not comments" {
   run_clone preflight
   [ "$status" -eq 0 ]
-  [ "$(calls '^pr list --repo src-owner/project --state all .*--json number,state,isCrossRepository,comments,reviews,labels,assignees,milestone ')" -eq 1 ]
+  [ "$(calls '^pr list --repo src-owner/project --state all .*--json number,state,isCrossRepository,reviews,labels,assignees,milestone ')" -eq 1 ]
 }
 
 @test "a failing merged-PR query stops the run before the destination is created" {
