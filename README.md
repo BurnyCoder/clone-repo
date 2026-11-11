@@ -187,9 +187,7 @@ The tests never touch GitHub. On Windows, where starting processes is slow, the 
 
   It can also simulate someone pushing mid-sync, and an API call failing half way.
 
-The real-GitHub check, a sync into a throwaway repo with PRs and branches of its own, is described in [AGENTS.md](AGENTS.md#testing).
-
-How the tests are organized is in [AGENTS.md](AGENTS.md#testing).
+How the tests are organized, and the real-GitHub check (a sync into a throwaway repo with PRs and branches of its own), are in [AGENTS.md](AGENTS.md#testing).
 
 ## Sources
 
