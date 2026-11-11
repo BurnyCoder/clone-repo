@@ -49,7 +49,9 @@ make_source() {
   run_clone
   [ "$status" -eq 0 ]
   [[ "$output" == *"PR #1 already in dst-owner/project, skipping"* ]]
-  [[ "$output" == *"exists, syncing settings"* ]]
+  [[ "$output" == *"exists: keeping its settings"* ]]
+  [ "$(calls '^repo edit dst-owner/project --description')" -eq 1 ]          # settings only when created
+  [ "$(calls '^label clone src-owner/project --repo dst-owner/project$')" -eq 1 ]   # then only adds labels
   [ "$(calls '^repo create')" -eq 1 ]
   [ "$(wc -l < "$STUB_DIR/created.tsv")" -eq 2 ]
   [ "$(refs "$DEST_GIT_URL")" = "$(refs "$SOURCE_GIT_URL")" ]

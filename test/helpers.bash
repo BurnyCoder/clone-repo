@@ -45,6 +45,20 @@ make_pr() {
   printf '%s\t%s\t%s\t%s\t%s\n' "$n" "$merge" "$head" "$ref" main >> "$STUB_DIR/prs.tsv"
 }
 
+# dest_commit BRANCH MSG: commit straight into dest.git on BRANCH (started from main if it doesn't exist),
+# the way someone working in the destination would, and print the new commit. A bare repo has no working
+# tree, so this uses plumbing: https://git-scm.com/docs/git-commit-tree
+dest_commit() {
+  local parent sha
+  parent="$(git -C "$DEST_GIT_URL" rev-parse -q --verify "refs/heads/$1" || git -C "$DEST_GIT_URL" rev-parse refs/heads/main)"
+  sha="$(git -C "$DEST_GIT_URL" -c user.name=Them -c user.email=them@example.com commit-tree "$parent^{tree}" -p "$parent" -m "$2")"
+  git -C "$DEST_GIT_URL" update-ref "refs/heads/$1" "$sha"
+  echo "$sha"
+}
+
+# dest_has BRANCH: true when dest.git has BRANCH.
+dest_has() { git -C "$DEST_GIT_URL" rev-parse -q --verify "refs/heads/$1" > /dev/null; }
+
 # refs URL: branch and tag refs of a repo, the same filter verify uses.
 refs() { git ls-remote "$1" | grep -E 'refs/(heads|tags)/' | sort; }
 

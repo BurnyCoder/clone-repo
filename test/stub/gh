@@ -29,16 +29,28 @@ case "$args" in
   # merged_prs_tsv: number, merge commit, head SHA, head ref, base ref (written by make_pr in helpers).
   # (tests touch fail_merged_list to simulate a network/API error on this call)
   "pr list --repo $SOURCE_REPO --state merged"*) [ ! -f "$S/fail_merged_list" ] || exit 1; cat "$S/prs.tsv" 2>/dev/null || true ;;
-  # replay_prs: numbers already present in the destination.
-  "pr list --repo $DEST_REPO --state all"*"--json number --jq"*) tr '\n' ' ' < "$S/dest_prs" ;;
-  # verify: PR list and comment counts of either repo; identical canned output, the real comparison is covered by the real run.
-  "pr list --repo "*"--json number,title"*|"pr list --repo "*"--json number,comments"*) echo '[]' ;;
+  # replay_prs: merge commits of the destination's merged PRs. Like GitHub, a PR's merge commit is the
+  # first merge on its base branch that brought its head in (the oldest merge on the ancestry path).
+  # https://git-scm.com/docs/git-rev-list#Documentation/git-rev-list.txt---ancestry-pathltcommitgt
+  "pr list --repo $DEST_REPO --state merged"*)
+    while IFS=$'\t' read -r _ _ base sha; do
+      git -C "$DEST_GIT_URL" rev-list --ancestry-path --merges --reverse "$sha..refs/heads/$base" 2>/dev/null | sed -n 1p
+    done < "$S/created.tsv" | tr '\n' ' '; echo ;;
+  # verify: one TSV line per PR, built by gh's jq in the real tool; tests write vprs_source / vprs_dest.
+  "pr list --repo $SOURCE_REPO --state all"*"mergeCommit,title"*) cat "$S/vprs_source" 2>/dev/null || true ;;
+  "pr list --repo $DEST_REPO --state all"*"mergeCommit,title"*) cat "$S/vprs_dest" 2>/dev/null || true ;;
   # copy_comments: the source PR's comments as one JSON object per line (tests write comments_N.jsonl;
   # the "Originally posted by" prefix is built by gh's jq in the real tool, so the file holds the final bodies).
   "api repos/$SOURCE_REPO/issues/"*"/comments "*)
     n="${args#api repos/$SOURCE_REPO/issues/}"; n="${n%%/*}"; cat "$S/comments_$n.jsonl" 2>/dev/null || true ;;
   # copy_comments: post one comment to the destination PR; the JSON body arrives on stdin (--input -).
   "api repos/$DEST_REPO/issues/"*"/comments --input -"*) cat >> "$S/posted_comments.log"; echo >> "$S/posted_comments.log"; echo '{}' ;;
+  # replay_prs: the body with a "Copied from" link for a renumbered copy (built by gh's jq in the real tool).
+  "api repos/$SOURCE_REPO/pulls/"*"--jq {body:"*)
+    n="${args#api repos/$SOURCE_REPO/pulls/}"; n="${n%% *}"
+    printf '{"body":"Body of PR %s\\n\\n---\\n_Copied from https://github.com/%s/pull/%s_"}\n' "$n" "$SOURCE_REPO" "$n" ;;
+  # replay_prs: put that body on the copy (recorded, so tests can check which PR got it).
+  "api -X PATCH repos/$DEST_REPO/pulls/"*"--input"*) cat "$(input_file "$@")" >> "$S/patched_bodies.log"; echo '{}' ;;
   # replay_prs: the source PR's title/body/head/base as JSON.
   "api repos/$SOURCE_REPO/pulls/"*)
     n="${args#api repos/$SOURCE_REPO/pulls/}"; n="${n%% *}"
@@ -66,11 +78,11 @@ case "$args" in
   "repo view $SOURCE_REPO --json defaultBranchRef"*) echo main ;;
   # verify: settings, labels and secret names of either repo; identical canned output.
   "repo view "*"--json description,"*) echo '{"settings":"same"}' ;;
-  "label list --repo "*) echo '[{"name":"bug"}]' ;;
+  "label list --repo "*) echo bug ;;
   "secret list --repo $SOURCE_REPO "*) cat "$S/source_secrets" 2>/dev/null || true ;;
   "secret list --repo $DEST_REPO "*) cat "$S/dest_secrets" 2>/dev/null || true ;;
   # Writes whose effect isn't observable locally: recorded in calls.log only.
-  "repo edit $DEST_REPO "*|"label clone $SOURCE_REPO --repo $DEST_REPO "*|"secret set "*) ;;
+  "repo edit $DEST_REPO "*|"label clone $SOURCE_REPO --repo $DEST_REPO"*|"secret set "*) ;;
   # git credential helper: never needed for local paths.
   "auth git-credential"*) exit 1 ;;
   *) echo "gh stub: unhandled call: $args" >&2; exit 1 ;;
