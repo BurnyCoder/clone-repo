@@ -67,15 +67,18 @@ verify_rest() {
   for r in "$SOURCE_REPO" "$DEST_REPO"; do
     f="$WORK_DIR/${r//\//_}"
     gh label list --repo "$r" --limit 1000 --json name --jq '.[].name' | sort > "${f}_labels.txt"
-    gh repo view "$r" --json description,defaultBranchRef,hasIssuesEnabled,hasWikiEnabled,hasProjectsEnabled,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed,deleteBranchOnMerge > "${f}_settings.txt"
+    # One key=value per line, so a difference names the setting (jq to_entries: https://jqlang.org/manual/#to_entries-from_entries-with_entries).
+    gh repo view "$r" --json description,defaultBranchRef,hasIssuesEnabled,hasWikiEnabled,hasProjectsEnabled,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed,deleteBranchOnMerge \
+      --jq 'to_entries[] | "\(.key)=\(.value | tostring)"' > "${f}_settings.txt"
     gh secret list --repo "$r" --json name --jq '.[].name' | sort > "${f}_secrets.txt"   # https://cli.github.com/manual/gh_secret_list
   done
   local s="$WORK_DIR/${SOURCE_REPO//\//_}" d="$WORK_DIR/${DEST_REPO//\//_}"
   # comm -23: lines only in the first sorted file (https://www.gnu.org/software/coreutils/manual/html_node/comm-invocation.html).
   missing="$(comm -23 "${s}_labels.txt" "${d}_labels.txt" | tr '\n' ' ')"
   if [ -z "$missing" ]; then log "PASS labels"; else log "FAIL labels missing in $DEST_REPO: $missing"; FAILED=1; fi
-  if diff "${s}_settings.txt" "${d}_settings.txt" > /dev/null; then log "PASS settings"
-  else log "WARN settings differ (clone-repo sets them only when it creates the destination): ${s}_settings.txt vs ${d}_settings.txt"; fi
+  if diff "${s}_settings.txt" "${d}_settings.txt" > "$WORK_DIR/diff_settings.txt"; then log "PASS settings"
+  else log "WARN settings differ (clone-repo sets them only when it creates the destination; < source, > destination):"
+    run_logged cat "$WORK_DIR/diff_settings.txt"; fi
   missing="$(comm -23 "${s}_secrets.txt" "${d}_secrets.txt" | tr '\n' ' ')"
   if [ -n "$missing" ]; then log "WARN secrets missing in destination: ${missing}(set them with SECRETS_ENV_FILE)"
   else log "PASS secrets"; fi
