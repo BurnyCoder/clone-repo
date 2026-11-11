@@ -37,7 +37,7 @@ dest_tip() { srcgit rev-parse -q --verify "refs/dest/${1#refs/}" || true; }
 
 # from_source SHA: true when a source branch or tag contains SHA, i.e. it is the source's own history.
 # A destination commit that isn't is work done only in the destination, which clone-repo never removes.
-# https://git-scm.com/docs/git-for-each-ref#Documentation/git-for-each-ref.txt---containsltobjectgt
+# https://git-scm.com/docs/git-for-each-ref (--contains)
 from_source() { [ -n "$(srcgit for-each-ref --contains "$1" --count=1 refs/heads refs/tags 2>/dev/null)" ]; }
 
 # ref_state SHA REF: how the destination's REF compares with the source's SHA for it.

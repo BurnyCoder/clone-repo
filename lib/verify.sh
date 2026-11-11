@@ -13,7 +13,7 @@
 
 # PR_FIELDS / PRS_JQ: one tab-separated line per PR: merge commit ("-" if unmerged), number, then the
 # fields that must match. tostring keeps @tsv happy; tojson keeps a body on one line.
-# https://cli.github.com/manual/gh_pr_list , https://jqlang.org/manual/#format-strings-and-escaping
+# https://cli.github.com/manual/gh_pr_list , https://jqlang.org/manual/ (@tsv, tojson, sub)
 PR_FIELDS=number,mergeCommit,title,state,headRefName,headRefOid,baseRefName,isDraft,comments,body
 PRS_JQ='sort_by(.number)[] | [(.mergeCommit.oid // "-"), (.number | tostring), .title, .state, .headRefName,
   .headRefOid, .baseRefName, (.isDraft | tostring), (.comments | length | tostring),
@@ -67,7 +67,7 @@ verify_rest() {
   for r in "$SOURCE_REPO" "$DEST_REPO"; do
     f="$WORK_DIR/${r//\//_}"
     gh label list --repo "$r" --limit 1000 --json name --jq '.[].name' | sort > "${f}_labels.txt"
-    # One key=value per line, so a difference names the setting (jq to_entries: https://jqlang.org/manual/#to_entries-from_entries-with_entries).
+    # One key=value per line, so a difference names the setting (jq to_entries: https://jqlang.org/manual/).
     gh repo view "$r" --json description,defaultBranchRef,hasIssuesEnabled,hasWikiEnabled,hasProjectsEnabled,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed,deleteBranchOnMerge \
       --jq 'to_entries[] | "\(.key)=\(.value | tostring)"' > "${f}_settings.txt"
     gh secret list --repo "$r" --json name --jq '.[].name' | sort > "${f}_secrets.txt"   # https://cli.github.com/manual/gh_secret_list
