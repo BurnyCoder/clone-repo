@@ -7,7 +7,7 @@ clone-repo only copies what it can reproduce exactly, and `preflight` / `check_m
 | Issues | Create issues and PRs together in number order, so the counter stays aligned. Copy title, body, labels and state (`state_reason` for closed issues). | Dates and author (the copying account). The body could say "originally by @user on date" when the author differs. |
 | Numbering gaps (deleted issues, discussions) | Create a closed placeholder issue for each missing number. | Placeholders are visible. |
 | Closed, unmerged PRs | Push the head from the source's `refs/pull/N/head` (fetched explicitly, since a bare clone skips it), open the PR, then close it. | None beyond dates. |
-| Open PRs | Same, but leave the PR open and keep its branch, so skip the branch delete and exclude it from the mirror prune. | Dates. |
+| Open PRs | Same, but leave the PR open and keep its branch, so skip the branch delete. `sync_refs` keeps the branch, since it only deletes merged PR branches. | Dates. |
 | Squash / rebase-merged PRs | Open the PR from `refs/pull/N/head` against the pre-merge base, push the real squash commit, then close the PR with a note naming the merge SHA. | The state is CLOSED instead of MERGED. GitHub only marks merged when the head is in the base. |
 | Fork PRs | Push the head to a namespaced branch such as `pr/N/<branch>`. | The head branch name. |
 | Reviews, labels, assignees, milestones | Labels via `POST /issues/N/labels`. Milestones created first, then assigned. Assignees only if they have access. Review bodies and inline review comments as plain comments with an "originally by" line. | Inline review threads become plain comments. |
