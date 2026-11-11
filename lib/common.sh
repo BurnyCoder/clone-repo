@@ -23,10 +23,57 @@ GIT=(git -c credential.helper= -c 'credential.helper=!gh auth git-credential')
 # srcgit ARGS...: git inside the bare clone of the source made by clone_source.
 srcgit() { git -C "$WORK_DIR/src.git" "$@"; }
 
-# push_ref SHA BRANCH: point BRANCH in the destination at commit SHA. --force because replay_prs
-# deliberately moves the base branch to a past commit before each PR is opened.
-# Refspec syntax <src>:<dst>: https://git-scm.com/docs/git-push#Documentation/git-push.txt-refspec
-push_ref() { run_logged "${GIT[@]}" -C "$WORK_DIR/src.git" push --force "$DEST_GIT_URL" "$1:refs/heads/$2"; }
+# fetch_dest: copy the destination's branches and tags into the bare clone as refs/dest/heads/* and
+# refs/dest/tags/*, so destination commits can be compared with the source's locally. --prune drops
+# snapshot refs the destination no longer has; --no-tags keeps destination tags out of the source's
+# refs/tags (https://git-scm.com/docs/git-fetch). An empty destination simply has nothing to fetch.
+fetch_dest() {
+  run_logged "${GIT[@]}" -C "$WORK_DIR/src.git" fetch --prune --no-tags "$DEST_GIT_URL" \
+    '+refs/heads/*:refs/dest/heads/*' '+refs/tags/*:refs/dest/tags/*'
+}
+
+# dest_tip REF: the destination's object for REF (refs/heads/x or refs/tags/x) in the last fetch_dest, or "".
+dest_tip() { srcgit rev-parse -q --verify "refs/dest/${1#refs/}" || true; }
+
+# from_source SHA: true when a source branch or tag contains SHA, i.e. it is the source's own history.
+# A destination commit that isn't is work done only in the destination, which clone-repo never removes.
+# https://git-scm.com/docs/git-for-each-ref#Documentation/git-for-each-ref.txt---containsltobjectgt
+from_source() { [ -n "$(srcgit for-each-ref --contains "$1" --count=1 refs/heads refs/tags 2>/dev/null)" ]; }
+
+# ref_state SHA REF: how the destination's REF compares with the source's SHA for it.
+#   same      the destination has SHA
+#   missing   the destination has no REF
+#   behind    the destination has source history only, so moving it to SHA loses nothing
+#   ahead     the destination added its own commits on top of SHA: kept, nothing to copy
+#   diverged  both repos changed it: kept, a person has to merge them
+ref_state() {
+  local tip; tip="$(dest_tip "$2")"
+  if [ "$tip" = "$1" ]; then echo same
+  elif [ -z "$tip" ]; then echo missing
+  elif from_source "$tip"; then echo behind
+  elif srcgit merge-base --is-ancestor "$1" "$tip"; then echo ahead   # https://git-scm.com/docs/git-merge-base
+  else echo diverged; fi
+}
+
+# lease REF: the push option that lets a push change REF only if the destination still has what the last
+# fetch_dest saw there (an empty value: only if it still has no such ref). So a commit someone pushes to the
+# destination during a sync is never overwritten: git rejects the push ("stale info") and the run stops.
+# A refspec starting with '+' would force the ref despite a stale lease (tested with git 2.56), so none is used.
+# https://git-scm.com/docs/git-push (--force-with-lease=<refname>:<expect>)
+lease() { printf -- '--force-with-lease=%s:%s' "$1" "$(dest_tip "$1")"; }
+
+# push_ref SHA BRANCH: point BRANCH in the destination at commit SHA (an empty SHA deletes BRANCH).
+# replay_prs deliberately moves the base branch to a past commit before each PR is opened, which the lease
+# allows. A branch holding destination-only commits is refused before anything is pushed.
+# Refspec syntax <src>:<dst>, see <refspec> in https://git-scm.com/docs/git-push
+push_ref() {
+  case "$(ref_state "$1" "refs/heads/$2")" in ahead|diverged)
+    die "$DEST_REPO's $2 has commits $SOURCE_REPO doesn't, so both repos changed it. Merge one into the other, then sync again" ;;
+  esac
+  run_logged "${GIT[@]}" -C "$WORK_DIR/src.git" push "$(lease "refs/heads/$2")" "$DEST_GIT_URL" "$1:refs/heads/$2"
+  # Keep the snapshot in step with what was pushed, so the next lease on this branch expects it.
+  if [ -n "$1" ]; then srcgit update-ref "refs/dest/heads/$2" "$1"; else srcgit update-ref -d "refs/dest/heads/$2"; fi
+}
 
 # merged_prs_tsv: write the source's merged PRs to $MERGED_PRS, lowest number first, one per line as
 # tab-separated "number merge-SHA head-SHA head-branch base-branch". gh's --jq is a built-in jq
