@@ -55,15 +55,24 @@ ref_state() {
   else echo diverged; fi
 }
 
-# push_ref SHA BRANCH: point BRANCH in the destination at commit SHA. --force because replay_prs
-# deliberately moves the base branch to a past commit before each PR is opened. It refuses to move a
-# branch that holds destination-only commits (as of the last fetch_dest), so their work is never lost.
+# lease REF: the push option that lets a push change REF only if the destination still has what the last
+# fetch_dest saw there (an empty value: only if it still has no such ref). So a commit someone pushes to the
+# destination during a sync is never overwritten: git rejects the push ("stale info") and the run stops.
+# A refspec starting with '+' would force the ref despite a stale lease (tested with git 2.56), so none is used.
+# https://git-scm.com/docs/git-push (--force-with-lease=<refname>:<expect>)
+lease() { printf -- '--force-with-lease=%s:%s' "$1" "$(dest_tip "$1")"; }
+
+# push_ref SHA BRANCH: point BRANCH in the destination at commit SHA (an empty SHA deletes BRANCH).
+# replay_prs deliberately moves the base branch to a past commit before each PR is opened, which the lease
+# allows. A branch holding destination-only commits is refused before anything is pushed.
 # Refspec syntax <src>:<dst>, see <refspec> in https://git-scm.com/docs/git-push
 push_ref() {
   case "$(ref_state "$1" "refs/heads/$2")" in ahead|diverged)
     die "$DEST_REPO's $2 has commits $SOURCE_REPO doesn't, so both repos changed it. Merge one into the other, then sync again" ;;
   esac
-  run_logged "${GIT[@]}" -C "$WORK_DIR/src.git" push --force "$DEST_GIT_URL" "$1:refs/heads/$2"
+  run_logged "${GIT[@]}" -C "$WORK_DIR/src.git" push "$(lease "refs/heads/$2")" "$DEST_GIT_URL" "$1:refs/heads/$2"
+  # Keep the snapshot in step with what was pushed, so the next lease on this branch expects it.
+  if [ -n "$1" ]; then srcgit update-ref "refs/dest/heads/$2" "$1"; else srcgit update-ref -d "refs/dest/heads/$2"; fi
 }
 
 # merged_prs_tsv: write the source's merged PRs to $MERGED_PRS, lowest number first, one per line as

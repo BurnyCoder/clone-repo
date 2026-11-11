@@ -23,19 +23,23 @@ NOTE_JQ='{body: ((.body // "") + "\n\n---\n_Copied from \(.html_url)_")}'
 COMMENTS_JQ='.[] | {body: "> Originally posted by @\(.user.login) on \(.created_at)\n\n\(.body)"} | tojson'
 
 # copy_comments N M: copy the conversation comments of source PR N to destination PR M (issue comments:
-# https://docs.github.com/en/rest/issues/comments). Inline review comments are not conversation comments;
+# https://docs.github.com/en/rest/issues/comments), skipping as many as M already has, so a copy left half
+# done by an earlier run gets only the rest. Inline review comments are not conversation comments;
 # preflight refuses PRs that have reviews.
 copy_comments() {
-  local c count
+  local c count have
   # Written to a file first, so a failed request stops the run instead of looking like "no comments".
   # --paginate: https://cli.github.com/manual/gh_api
   gh api "repos/$SOURCE_REPO/issues/$1/comments" --paginate --jq "$COMMENTS_JQ" > "$WORK_DIR/comments_$1.jsonl"
   count="$(grep -c . "$WORK_DIR/comments_$1.jsonl" || true)"
   [ "$count" != 0 ] || return 0
+  # --paginate prints one count per page; awk adds them up.
+  have="$(gh api "repos/$DEST_REPO/issues/$2/comments" --paginate --jq length | awk '{s += $1} END {print s + 0}')"
+  tail -n "+$((have + 1))" "$WORK_DIR/comments_$1.jsonl" > "$WORK_DIR/comments_$1.todo"
   while IFS= read -r c; do
     printf '%s' "$c" | gh api "repos/$DEST_REPO/issues/$2/comments" --input - > /dev/null   # --input -: body from stdin
-  done < "$WORK_DIR/comments_$1.jsonl"
-  log "PR #$1: copied $count comments"
+  done < "$WORK_DIR/comments_$1.todo"
+  log "PR #$1: copied $((count - have)) comments ($have were already there)"
 }
 
 # replay_prs: replay every merged source PR that the destination doesn't have yet.
@@ -52,10 +56,17 @@ replay_prs() {
     log "PR #$n ($ref -> $base_ref): $base_ref at ${base:0:7}, head ${head:0:7}, merge ${merge:0:7}"
     push_ref "$base" "$base_ref"
     push_ref "$head" "$ref"
-    # Title/body/head/base go through a JSON file, so the body arrives byte for byte.
-    # REST create-PR fields: https://docs.github.com/en/rest/pulls/pulls#create-a-pull-request
-    gh api "repos/$SOURCE_REPO/pulls/$n" --jq '{title, body, head: .head.ref, base: .base.ref}' > "$WORK_DIR/pr_$n.json"
-    got="$(gh api "repos/$DEST_REPO/pulls" --input "$WORK_DIR/pr_$n.json" --jq .number)"   # https://cli.github.com/manual/gh_api
+    # A copy an earlier run opened but didn't finish (same head commit, still open) is reused: GitHub
+    # refuses a second PR for the same branches. https://cli.github.com/manual/gh_pr_list (--head)
+    got="$(gh pr list --repo "$DEST_REPO" --state open --head "$ref" --json number,headRefOid \
+      --jq "[.[] | select(.headRefOid == \"$head\") | .number] | first // empty")"
+    if [ -n "$got" ]; then log "PR #$n: reusing copy #$got, left open by an earlier run"
+    else
+      # Title/body/head/base go through a JSON file, so the body arrives byte for byte.
+      # REST create-PR fields: https://docs.github.com/en/rest/pulls/pulls#create-a-pull-request
+      gh api "repos/$SOURCE_REPO/pulls/$n" --jq '{title, body, head: .head.ref, base: .base.ref}' > "$WORK_DIR/pr_$n.json"
+      got="$(gh api "repos/$DEST_REPO/pulls" --input "$WORK_DIR/pr_$n.json" --jq .number)"   # https://cli.github.com/manual/gh_api
+    fi
     if [ "$got" != "$n" ]; then   # the destination has PRs or issues of its own: link the copy to its original
       log "source PR #$n is #$got in $DEST_REPO (its own PRs or issues took #$n), adding a link to the original"
       gh api "repos/$SOURCE_REPO/pulls/$n" --jq "$NOTE_JQ" > "$WORK_DIR/note_$n.json"
@@ -64,6 +75,6 @@ replay_prs() {
     copy_comments "$n" "$got"
     push_ref "$merge" "$base_ref"
     wait_merged "$got"
-    run_logged "${GIT[@]}" -C "$WORK_DIR/src.git" push "$DEST_GIT_URL" --delete "$ref"
+    push_ref "" "$ref"
   done < "$MERGED_PRS"
 }
