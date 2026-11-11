@@ -94,3 +94,28 @@ source "$BATS_TEST_DIRNAME/helpers.bash"   # plain source: also works with C:/ p
   [ "$status" -ne 0 ]
   [[ "$output" == *"FAIL prs"* ]]
 }
+
+@test "a commit pushed to the destination during the sync is never overwritten" {
+  make_pr 1 feat/a
+  run_clone; [ "$status" -eq 0 ]
+  make_pr 2 feat/b
+  touch "$STUB_DIR/race_on_create"          # someone pushes to main right after the copy of PR 2 is opened
+  run_clone
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"stale info"* ]]         # git refused: main is no longer what the sync checked
+  [ "$(git -C "$DEST_GIT_URL" log -1 --format=%s refs/heads/main)" = "Pushed during the sync" ]
+}
+
+@test "a copy left half done by a run that stopped is reused, and only its missing comments are added" {
+  make_pr 1 feat/a
+  printf '%s\n' '{"body":"first"}' '{"body":"second"}' > "$STUB_DIR/comments_1.jsonl"
+  touch "$STUB_DIR/fail_second_comment"          # the API fails on the second comment, once
+  run_clone
+  [ "$status" -ne 0 ]
+  run_clone
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"reusing copy #1, left open by an earlier run"* ]]
+  [ "$(wc -l < "$STUB_DIR/created.tsv")" -eq 1 ]                  # opened once
+  [ "$(grep -c . "$STUB_DIR/posted_comments.log")" -eq 2 ]         # each comment posted once
+  [ "$(grep -n -o -E 'first|second' "$STUB_DIR/posted_comments.log" | tr '\n' ' ')" = "1:first 2:second " ]
+}

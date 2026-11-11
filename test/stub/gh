@@ -43,8 +43,23 @@ case "$args" in
   # the "Originally posted by" prefix is built by gh's jq in the real tool, so the file holds the final bodies).
   "api repos/$SOURCE_REPO/issues/"*"/comments "*)
     n="${args#api repos/$SOURCE_REPO/issues/}"; n="${n%%/*}"; cat "$S/comments_$n.jsonl" 2>/dev/null || true ;;
+  # copy_comments: how many comments the destination PR has (posted_comments.log lines are "N<TAB>body").
+  "api repos/$DEST_REPO/issues/"*"/comments --paginate"*)
+    n="${args#api repos/$DEST_REPO/issues/}"; n="${n%%/*}"; grep -c "^$n	" "$S/posted_comments.log" 2>/dev/null || true ;;
   # copy_comments: post one comment to the destination PR; the JSON body arrives on stdin (--input -).
-  "api repos/$DEST_REPO/issues/"*"/comments --input -"*) cat >> "$S/posted_comments.log"; echo >> "$S/posted_comments.log"; echo '{}' ;;
+  # fail_second_comment: the API fails on a PR's second comment once (a run that stops half way).
+  "api repos/$DEST_REPO/issues/"*"/comments --input -"*)
+    n="${args#api repos/$DEST_REPO/issues/}"; n="${n%%/*}"
+    if [ -f "$S/fail_second_comment" ] && [ "$(grep -c "^$n	" "$S/posted_comments.log" 2>/dev/null || true)" = 1 ]; then
+      rm "$S/fail_second_comment"; echo "HTTP 502: Bad Gateway" >&2; exit 1
+    fi
+    { printf '%s\t' "$n"; cat; echo; } >> "$S/posted_comments.log"; echo '{}' ;;
+  # replay_prs: an open copy left by an earlier run: created PRs with this head branch, not yet merged.
+  "pr list --repo $DEST_REPO --state open --head "*)
+    h="${args#*--head }"; h="${h%% *}"
+    while IFS=$'\t' read -r n head base sha; do
+      [ "$head" = "$h" ] && ! merged "$sha" "$base" && echo "$n"
+    done < "$S/created.tsv"; true ;;
   # replay_prs: the body with a "Copied from" link for a renumbered copy (built by gh's jq in the real tool).
   "api repos/$SOURCE_REPO/pulls/"*"--jq {body:"*)
     n="${args#api repos/$SOURCE_REPO/pulls/}"; n="${n%% *}"
@@ -63,6 +78,12 @@ case "$args" in
     if merged "$sha" "$base"; then echo "No commits between $base and $head" >&2; exit 1; fi
     n=$(( $(wc -l < "$S/dest_prs") + 1 ))
     printf '%s\t%s\t%s\t%s\n' "$n" "$head" "$base" "$sha" >> "$S/created.tsv"
+    # race_on_create: someone pushes to the destination's main right now, in the middle of the sync.
+    if [ -f "$S/race_on_create" ]; then
+      p="$(git -C "$DEST_GIT_URL" rev-parse refs/heads/main)"
+      c="$(git -C "$DEST_GIT_URL" -c user.name=Them -c user.email=them@example.com commit-tree "$p^{tree}" -p "$p" -m "Pushed during the sync")"
+      git -C "$DEST_GIT_URL" update-ref refs/heads/main "$c"; rm "$S/race_on_create"
+    fi
     echo "$n" >> "$S/dest_prs"; echo "$n" ;;
   # wait_merged: MERGED once the PR head is reachable from its base, else OPEN.
   "pr view "*"--repo $DEST_REPO --json state"*)
