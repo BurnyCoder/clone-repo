@@ -39,5 +39,17 @@ sync_refs() {
   [ -z "$ahead" ] || log "ahead of $SOURCE_REPO, kept:$ahead"
   [ -z "$diverged" ] || log "WARN changed in both repos, kept $DEST_REPO's version:$diverged"
   [ -z "$own" ] || log "only in $DEST_REPO, kept:$own"
-  [ -z "${CREATED:-}" ] || run_logged gh repo edit "$DEST_REPO" --default-branch "${default#refs/heads/}"
+  set_default_branch "$default"
+}
+
+# set_default_branch REF: give the destination the source's default branch when this run gave it its first
+# branches: a repo this run created, or an empty copy (made from an empty source) getting its first commits.
+# A destination that already had branches keeps its admins' choice. A source with no commits has no default
+# branch yet, and GitHub refuses one on an empty repo ("HTTP 422 ... Repository.default_branch is invalid").
+set_default_branch() {
+  if ! srcgit rev-parse -q --verify "$1" > /dev/null; then
+    log "$SOURCE_REPO has no commits yet, so there is no default branch to set; the sync that copies its first commits sets it"
+  elif [ -n "${CREATED:-}" ] || [ ! -s "$WORK_DIR/dest_branches.txt" ]; then   # -s: file exists and isn't empty
+    run_logged gh repo edit "$DEST_REPO" --default-branch "${1#refs/heads/}"
+  fi
 }

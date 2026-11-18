@@ -102,6 +102,12 @@ case "$args" in
   "label list --repo "*) echo bug ;;
   "secret list --repo $SOURCE_REPO "*) cat "$S/source_secrets" 2>/dev/null || true ;;
   "secret list --repo $DEST_REPO "*) cat "$S/dest_secrets" 2>/dev/null || true ;;
+  # sync_refs: like GitHub, refuse a default branch the destination doesn't have. An empty repo has none,
+  # and GitHub answers this (seen on a real run, 2026-11-18).
+  "repo edit $DEST_REPO --default-branch "*)
+    b="${args##*--default-branch }"
+    git -C "$DEST_GIT_URL" rev-parse -q --verify "refs/heads/$b" > /dev/null \
+      || { printf 'HTTP 422: Validation Failed\nRepository.default_branch is invalid\n' >&2; exit 1; } ;;
   # Writes whose effect isn't observable locally: recorded in calls.log only.
   "repo edit $DEST_REPO "*|"label clone $SOURCE_REPO --repo $DEST_REPO"*|"secret set "*) ;;
   # git credential helper: never needed for local paths.
