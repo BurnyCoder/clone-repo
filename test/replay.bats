@@ -57,6 +57,26 @@ make_source() {
   [ "$(refs "$DEST_GIT_URL")" = "$(refs "$SOURCE_GIT_URL")" ]
 }
 
+@test "an empty source makes an empty copy, and the sync that brings its first commits sets the default branch" {
+  rm -rf "$SOURCE_GIT_URL"; git init -q -b main "$SOURCE_GIT_URL"   # no commits, like a just-created GitHub repo
+  run_clone
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"has no commits yet"* ]]
+  [[ "$output" == *"ALL CHECKS PASSED"* ]]
+  [ -z "$(refs "$DEST_GIT_URL")" ]
+  [ "$(calls -- '--default-branch')" -eq 0 ]   # GitHub refuses a default branch on an empty repo (HTTP 422)
+  # Later the source gets its first commits. The copy is no longer new, but it had no branches, so the
+  # source's default branch is set now rather than left to whichever branch GitHub saw first.
+  src commit -q --allow-empty -m "Initial commit"
+  src branch -q a-feature
+  run_clone
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$(refs "$DEST_GIT_URL")" = "$(refs "$SOURCE_GIT_URL")" ]
+  [ "$(calls '^repo edit dst-owner/project --default-branch main')" -eq 1 ]
+}
+
 @test "the destination visibility comes from DEST_VISIBILITY" {
   make_pr 1 feat/a
   export DEST_VISIBILITY=public
